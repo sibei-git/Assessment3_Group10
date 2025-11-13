@@ -3,6 +3,8 @@
 # through discussion.In the early stage, we read the notes together to 
 # understand the requirements and learn functions. Later, we program together, 
 #find bugs, and solve them together.
+
+# https://github.com/sibei-git/Assessment3_Group10.git
 #-------------------------------------------------------------------------------
 # Smooth Deconvolution
 # This script estimates the underlying infection curve f(t)
@@ -193,7 +195,7 @@ plot_death <- function(t_obs, y, tf, out, mu_hat, f_hat, lambda = NULL) {
   y_all <- range(c(y, mu_hat, f_hat))  # Determine y-axis range
   
   # Plot observed deaths (grey points)
-  plot(t_obs, y, type = "p", col = "grey",
+  plot(t_obs, y, type = "p", col = "darkgreen",
        main = "Observed, Fitted Deaths and Estimated Infections",
        xlab = "Time (days)", ylab = "Count",
        ylim = y_all)
@@ -207,7 +209,7 @@ plot_death <- function(t_obs, y, tf, out, mu_hat, f_hat, lambda = NULL) {
   # Add legend and start marker
   legend("topright",
          legend = c("Observed Deaths", "Fitted Deaths", "Estimated Infections"),
-         col = c("grey", "blue", "red"),
+         col = c("darkgreen", "blue", "red"),
          lty = c(NA, 1, 1), pch = c(1, NA, NA),
          bty = "n")
   abline(v = t_obs[1], lty = 2, col = "darkgrey")
@@ -402,10 +404,10 @@ plot_final <- function(t_obs, y, tf, fit_best, fhat_boot) {
   
   # Add shaded 95% CI for infection curve (dark grey)
   polygon(c(tf, rev(tf)), c(f_low, rev(f_high)),
-          col = rgb(0.6, 0.6, 0.6, 0.4), border = NA)
+          col = rgb(0.8, 0.6, 0.9, 0.4), border = NA)
   
   # Add observed and fitted deaths
-  points(t_obs, y, col = "grey40", pch = 1)           # Observed deaths (grey points)
+  points(t_obs, y, col = "darkgreen", pch = 1)           # Observed deaths (grey points)
   lines(t_obs, fit_best$mu_hat, col = "blue", lwd = 2)  # Fitted deaths (blue line)
   
   # Add mean infection curve f(t)
@@ -415,7 +417,7 @@ plot_final <- function(t_obs, y, tf, fit_best, fhat_boot) {
   legend("topright",
          legend = c("Observed Deaths", "Fitted Deaths",
                     "Estimated Infections", "95% CI"),
-         col = c("grey40", "blue", "red", "grey40"),
+         col = c("darkgreen", "blue", "red",rgb(0.8, 0.6, 0.9, 0.6)),
          lty = c(NA, 1, 1, 1), pch = c(1, NA, NA, NA),
          bty = "n")
 }
@@ -433,9 +435,6 @@ S <- out$S
 tf <- out$tf
 
 # Fit, plot, and bootstrap
-# Divide plotting window into 2 rows and 2 columns
-par(mfrow = c(2, 2))
-
 # Fit with fixed λ = 5e-5 and plot observed deaths, fitted deaths, and infection curve
 fit_result <- fit_death(y, X, Xtilde, S, lambda = 5e-5)
 plot_death(t_obs, y, tf, out, fit_result$mu_hat, fit_result$f_hat, lambda = fit_result$lambda)
@@ -445,9 +444,8 @@ log_lambda_interval <- seq(-13, -7, length = 50)
 lambda_hat <- bic_criterion(X, S, y, log_lambda_interval)
 cat("Best lambda found by BIC:", lambda_hat, "\n")
 
-# Refit using best λ and plot observed deaths, fitted deaths, and infection curve
+# Refit using best λ
 fit_best <- fit_death(y, X, Xtilde, S, lambda = lambda_hat)
-plot_death(t_obs, y, tf, out, fit_best$mu_hat, fit_best$f_hat, lambda = lambda_hat)
 
 # Bootstrap to estimate uncertainty
 boot_result <- bootstrap(X, Xtilde, S, y, log_lambda_interval)
