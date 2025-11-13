@@ -392,12 +392,11 @@ bootstrap <- function(X, Xtilde, S, y, log_lambda_interval) {
 #   None (plots directly).
 plot_final <- function(t_obs, y, tf, fit_best, fhat_boot) {
   # Compute mean and 95% CI of infection curve f(t)
-  f_mean <- rowMeans(fhat_boot)
   f_low  <- apply(fhat_boot, 1, quantile, probs = 0.025)
   f_high <- apply(fhat_boot, 1, quantile, probs = 0.975)
   
   # Set up empty plot with sensible axis limits
-  plot(tf, f_mean, type = "n",
+  plot(tf, fit_best$f_hat, type = "n",
        main = "Daily deaths and infection rate with 95% CI",
        xlab = "Time (days)", ylab = "Count",
        ylim = c(0, max(y, f_high, na.rm = TRUE)))
@@ -411,7 +410,7 @@ plot_final <- function(t_obs, y, tf, fit_best, fhat_boot) {
   lines(t_obs, fit_best$mu_hat, col = "blue", lwd = 2)  # Fitted deaths (blue line)
   
   # Add mean infection curve f(t)
-  lines(tf, f_mean, col = "red", lwd = 2)
+  lines(tf, fit_best$f_hat, col = "red", lwd = 2)
 
   # Add legend
   legend("topright",
@@ -423,7 +422,7 @@ plot_final <- function(t_obs, y, tf, fit_best, fhat_boot) {
 }
 
 # Run the complete pipeline
-data <- read.table('D:/studying/Extended statistical programming/Assessment/engcov.txt', header = TRUE)
+data <- read.table('/Users/youchao/Assessment3_Group10/engcov.txt', header = TRUE)
 t_obs <- data$julian
 y <- data$nhs
 
