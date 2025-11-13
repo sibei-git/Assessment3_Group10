@@ -7,11 +7,11 @@
 # Smooth Deconvolution
 # This script estimates the underlying infection curve f(t)
 # from observed daily deaths y(t) using:
-#   - a known infection-to-death delay distribution π(j),
-#   - B-spline basis for smooth representation of f(t),
-#   - penalized Poisson regression (with smoothness penalty λβᵀSβ),
-#   - automatic selection of λ using BIC,
-#   - bootstrap estimation for uncertainty intervals.
+#  a known infection-to-death delay distribution π(j),
+#  B-spline basis for smooth representation of f(t),
+#  penalized Poisson regression (with smoothness penalty λβᵀSβ),
+#  automatic selection of λ using BIC,
+#  bootstrap estimation for uncertainty intervals.
 #
 # Output:
 #   1. Fitted deaths vs observed deaths plot.
@@ -272,29 +272,69 @@ bic_criterion <- function(X, S, y, log_lambda_interval) {
   return(lambda_hat)
 }
 
-###############################################################
 # Task 5: Bootstrap resampling to estimate uncertainty in f(t)
-###############################################################
-# Weighted versions of likelihood and gradient for bootstrap samples
+# Function:Computes the weighted penalized negative log-likelihood
+# for the Poisson model used in bootstrap resampling.
+# Arguments:
+#   gamma: log(β) coefficients to ensure β > 0.
+#   wb: Vector of bootstrap weights indicating how many times 
+#            each observation was sampled.
+#   X, S, y: Model inputs (death matrix, penalty matrix, observed deaths).
+#   lambda: Smoothing parameter controlling penalty strength.
+# Returns:
+#   A single numeric value representing the penalized negative log-likelihood.
 w_negloglik_penalty <- function(gamma, wb, X, y, S, lambda) {
-  beta <- exp(gamma)
-  mu <- as.vector(X %*% beta)
-  mu <- pmax(mu, 1e-10)
+  beta <- exp(gamma) #β = exp(γ) ensures positivity
+  mu <- as.vector(X %*% beta) # Compute fitted mean values
+  mu <- pmax(mu, 1e-10) # Avoid log(0) or division by zero by bounding μ below 1e-10
   
+  # Compute the weighted Poisson log-likelihood (ignoring constant term)
+  # Each observation is weighted by its bootstrap weight wb
   loglik <- sum(wb * (y * log(mu) - mu))
+  
+  # Compute smoothness penalty term
   penalty <- 0.5 * lambda * t(beta) %*% S %*% beta
+  
+  #Return the penalized negative log-likelihood
   return(-loglik + penalty)
 }
 
+# Function:Computes the gradient of the weighted penalized negative
+# log-likelihood with respect to γ = log(β).
+# Arguments:
+#   gamma: log(β) coefficients to ensure β > 0.
+#   wb: Numeric vector of bootstrap weights (length n).
+#   X, y, S: Model inputs (death matrix, observed deaths, penalty matrix).
+# Returns:
+#   Numeric vector (length K) — gradient ∂L/∂γ.
 w_grad_negloglik_penalty <- function(gamma, wb, X, y, S, lambda) {
+  # Convert log-scale parameters gamma to positive coefficients beta
   beta <- exp(gamma)
-  mu <- as.vector(X %*% beta)
-  mu <- pmax(mu, 1e-10)
+  mu <- as.vector(X %*% beta) # Compute fitted mean values
+  mu <- pmax(mu, 1e-10) # Avoid log(0) or division by zero
+  
+  # Compute the gradient of the weighted negative log-likelihood with respect to β
   grad_beta <- t(X) %*% (wb * (1 - y / mu))
+  # Chain rule
   grad_gamma <- as.vector(beta * grad_beta + lambda * (beta * (S %*% beta)))
   return(grad_gamma)
 }
 
+# Function:Performs nonparametric bootstrap to estimate uncertainty in the 
+# infection curve f(t). For each resample,fit weighted penalized model using 
+# BFGS optimization and store estimated f(t) curve. Repeat this 200 times 
+# to obtain bootstrap samples.
+# Arguments:
+#   X: Model and basis matrices .
+#   Xtilde:Spline basis matrix for infection curve f(t).
+#   S: Penalty matrix.
+#   y: Observed deaths.
+#   log_lambda_interval: A sequence of log(λ) values to search over.
+# Returns:
+#   A list containing:
+#     fhat_boot: matrix of bootstrap infection curves.
+#     lambda_hat: Optimal λ selected by BIC.
+#     wb_mat: matrix of bootstrap weights.
 bootstrap <- function(X, Xtilde, S, y, log_lambda_interval) {
   # Select λ using BIC
   lambda_hat <- bic_criterion(X, S, y, log_lambda_interval)
@@ -302,10 +342,12 @@ bootstrap <- function(X, Xtilde, S, y, log_lambda_interval) {
   n <- length(y)
   K <- ncol(X)
   
-  # Generate 200 bootstrap weight vectors (each column = one resample)
+  # Generate 200 bootstrap weight vectors 
   wb_mat <- replicate(200, tabulate(sample(n, replace = TRUE), n))
-  fhat_boot <- matrix(NA, nrow = nrow(Xtilde), ncol = 200)
+  fhat_boot <- matrix(NA, nrow = nrow(Xtilde), ncol = 200)# Store infection estimates
   
+  # Loop over 200 bootstrap samples: fit weighted model 
+  # and store infection estimates
   for (i in 1:200) {
     wb <- wb_mat[, i]
     
@@ -319,8 +361,9 @@ bootstrap <- function(X, Xtilde, S, y, log_lambda_interval) {
       X = X, y = y, S = S, lambda = lambda_hat, wb = wb
     )
     
-    # Compute infection curve for this bootstrap sample
+    # Convert log-coefficients to positive beta values
     beta_i <- exp(opt$par)
+    # Compute infection estimate for sample i
     fhat_boot[, i] <- as.vector(Xtilde %*% beta_i)
   }
   
@@ -331,62 +374,87 @@ bootstrap <- function(X, Xtilde, S, y, log_lambda_interval) {
   ))
 }
 
-###############################################################
+
 # Task 6: Plot infection curve with 95% bootstrap CI
-###############################################################
-plot_bootstrap <- function(tf, fhat_boot) {
-  # Compute mean and 95% confidence bounds
+# Function:Visualize the estimated infection curve f(t) along with its
+# 95% bootstrap confidence interval (CI). The function computes
+# the mean and quantile bounds across bootstrap samples and
+# overlays them on a single plot.
+# Arguments:
+#   t_obs: Observed time points (days).
+#   y: Observed deaths.
+#   tf: Time grid for infection curve.
+#   fit_best: Model object from fit_death() using optimal λ.
+#   fhat_boot: Matrix of bootstrap infection curves .
+# Returns:
+#   None (plots directly).
+plot_final <- function(t_obs, y, tf, fit_best, fhat_boot) {
+  # Compute mean and 95% CI of infection curve f(t)
   f_mean <- rowMeans(fhat_boot)
-  f_low <- apply(fhat_boot, 1, quantile, probs = 0.025)
+  f_low  <- apply(fhat_boot, 1, quantile, probs = 0.025)
   f_high <- apply(fhat_boot, 1, quantile, probs = 0.975)
   
-  # Base plot
-  plot(tf, f_mean, type = "l", col = "red", lwd = 2,
-       main = "Estimated infection curve with 95% bootstrap CI",
-       xlab = "Time (days)", ylab = "f(t)")
+  # Set up empty plot with sensible axis limits
+  plot(tf, f_mean, type = "n",
+       main = "Daily deaths and infection rate with 95% CI",
+       xlab = "Time (days)", ylab = "Count",
+       ylim = c(0, max(y, f_high, na.rm = TRUE)))
   
-  # Add confidence lines and shaded area
-  lines(tf, f_low, col = "grey60", lty = 2)
-  lines(tf, f_high, col = "grey60", lty = 2)
+  # Add shaded 95% CI for infection curve (dark grey)
   polygon(c(tf, rev(tf)), c(f_low, rev(f_high)),
-          col = rgb(0.9, 0.9, 0.9, 0.5), border = NA)
+          col = rgb(0.6, 0.6, 0.6, 0.4), border = NA)
+  
+  # Add observed and fitted deaths
+  points(t_obs, y, col = "grey40", pch = 1)           # Observed deaths (grey points)
+  lines(t_obs, fit_best$mu_hat, col = "blue", lwd = 2)  # Fitted deaths (blue line)
+  
+  # Add mean infection curve f(t)
+  lines(tf, f_mean, col = "red", lwd = 2)
+
+  # Add legend
+  legend("topright",
+         legend = c("Observed Deaths", "Fitted Deaths",
+                    "Estimated Infections", "95% CI"),
+         col = c("grey40", "blue", "red", "grey40"),
+         lty = c(NA, 1, 1, 1), pch = c(1, NA, NA, NA),
+         bty = "n")
 }
 
-###############################################################
 # Run the complete pipeline
-###############################################################
-data <- read.table('/Users/kangxinwei/sds/statistical programming/Assessment3_Group10/engcov .txt', header = TRUE)
+data <- read.table('D:/studying/Extended statistical programming/Assessment/engcov.txt', header = TRUE)
 t_obs <- data$julian
 y <- data$nhs
 
-# Step 1: Build design matrices
+# Build design matrices
 out <- Xtilde_X_S(t_obs)
 X <- out$X
 Xtilde <- out$Xtilde
 S <- out$S
 tf <- out$tf
 
-# Step 2–6: Fit, plot, and bootstrap
+# Fit, plot, and bootstrap
+# Divide plotting window into 2 rows and 2 columns
 par(mfrow = c(2, 2))
 
-# (1) Fit with fixed λ = 5e-5
+# Fit with fixed λ = 5e-5 and plot observed deaths, fitted deaths, and infection curve
 fit_result <- fit_death(y, X, Xtilde, S, lambda = 5e-5)
 plot_death(t_obs, y, tf, out, fit_result$mu_hat, fit_result$f_hat, lambda = fit_result$lambda)
 
-# (2) Select λ via BIC
+# Select λ via BIC
 log_lambda_interval <- seq(-13, -7, length = 50)
 lambda_hat <- bic_criterion(X, S, y, log_lambda_interval)
 cat("Best lambda found by BIC:", lambda_hat, "\n")
 
-# (3) Refit using best λ
+# Refit using best λ and plot observed deaths, fitted deaths, and infection curve
 fit_best <- fit_death(y, X, Xtilde, S, lambda = lambda_hat)
 plot_death(t_obs, y, tf, out, fit_best$mu_hat, fit_best$f_hat, lambda = lambda_hat)
 
-# (4) Bootstrap to estimate uncertainty
+# Bootstrap to estimate uncertainty
 boot_result <- bootstrap(X, Xtilde, S, y, log_lambda_interval)
 fhat_boot <- boot_result$fhat_boot
 lambda_hat <- boot_result$lambda_hat
 cat("Bootstrap finished, using lambda =", lambda_hat, "\n")
 
-# (5) Plot infection curve with 95% bootstrap CI
-plot_bootstrap(tf, fhat_boot)
+# Plot infection curve with 95% bootstrap CI 
+# and the daily death data against day of the year
+plot_final(t_obs, y, tf, fit_best, fhat_boot)
