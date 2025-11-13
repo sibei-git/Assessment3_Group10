@@ -14,11 +14,6 @@
 #  penalized Poisson regression (with smoothness penalty λβᵀSβ),
 #  automatic selection of λ using BIC,
 #  bootstrap estimation for uncertainty intervals.
-#
-# Output:
-#   1. Fitted deaths vs observed deaths plot.
-#   2. Estimated infection curve f(t).
-#   3. Infection curve with 95% bootstrap confidence interval.
 #-------------------------------------------------------------------------------
 library(splines)  # provides splineDesign() for B-spline basis
 # Define infection-to-death probability distribution π(j)
@@ -183,7 +178,7 @@ fit_death <- function(y, X, Xtilde, S, lambda = 5e-5, maxit = 200) {
 # Function: Plot observed deaths, fitted deaths, and infection curve.
 # Arguments:
 #   t_obs: Observed time vector.
-#   y: Observed deaths.
+#   y: Observed deaths.z
 #   tf: Time grid for infection curve.
 #   out: Output from Xtilde_X_S() containing tf and knots.
 #   mu_hat: Fitted deaths from model.
@@ -198,6 +193,7 @@ plot_death <- function(t_obs, y, tf, out, mu_hat, f_hat, lambda = NULL) {
   plot(t_obs, y, type = "p", col = "darkgreen",
        main = "Observed, Fitted Deaths and Estimated Infections",
        xlab = "Time (days)", ylab = "Count",
+       xlim = c(0, max(t_obs)),
        ylim = y_all)
   
   # Add fitted death curve (blue)
@@ -337,7 +333,7 @@ w_grad_negloglik_penalty <- function(gamma, wb, X, y, S, lambda) {
 #     fhat_boot: matrix of bootstrap infection curves.
 #     lambda_hat: Optimal λ selected by BIC.
 #     wb_mat: matrix of bootstrap weights.
-bootstrap <- function(X, Xtilde, S, y, log_lambda_interval) {
+bootstrap <- function(X, Xtilde, S, y, log_lambda_interval, par = rep(0,K)) {
   # Select λ using BIC
   lambda_hat <- bic_criterion(X, S, y, log_lambda_interval)
   
@@ -355,7 +351,7 @@ bootstrap <- function(X, Xtilde, S, y, log_lambda_interval) {
     
     # Fit weighted model using BFGS
     opt <- optim(
-      par = rep(0, K),
+      par = par,
       fn = w_negloglik_penalty,
       gr = w_grad_negloglik_penalty,
       method = "BFGS",
@@ -391,7 +387,7 @@ bootstrap <- function(X, Xtilde, S, y, log_lambda_interval) {
 # Returns:
 #   None (plots directly).
 plot_final <- function(t_obs, y, tf, fit_best, fhat_boot) {
-  # Compute mean and 95% CI of infection curve f(t)
+  # Compute 95% CI of infection curve f(t)
   f_low  <- apply(fhat_boot, 1, quantile, probs = 0.025)
   f_high <- apply(fhat_boot, 1, quantile, probs = 0.975)
   
@@ -399,6 +395,7 @@ plot_final <- function(t_obs, y, tf, fit_best, fhat_boot) {
   plot(tf, fit_best$f_hat, type = "n",
        main = "Daily deaths and infection rate with 95% CI",
        xlab = "Time (days)", ylab = "Count",
+       xlim = c(0, max(t_obs)),
        ylim = c(0, max(y, f_high, na.rm = TRUE)))
   
   # Add shaded 95% CI for infection curve (dark grey)
@@ -406,10 +403,10 @@ plot_final <- function(t_obs, y, tf, fit_best, fhat_boot) {
           col = rgb(0.8, 0.6, 0.9, 0.4), border = NA)
   
   # Add observed and fitted deaths
-  points(t_obs, y, col = "darkgreen", pch = 1)           # Observed deaths (grey points)
+  points(t_obs, y, col = "darkgreen", pch = 1) # Observed deaths (grey points)
   lines(t_obs, fit_best$mu_hat, col = "blue", lwd = 2)  # Fitted deaths (blue line)
   
-  # Add mean infection curve f(t)
+  # Add infection curve f(t)
   lines(tf, fit_best$f_hat, col = "red", lwd = 2)
 
   # Add legend
@@ -422,7 +419,9 @@ plot_final <- function(t_obs, y, tf, fit_best, fhat_boot) {
 }
 
 # Run the complete pipeline
-data <- read.table('/Users/youchao/Assessment3_Group10/engcov.txt', header = TRUE)
+setwd("D:/studying/Extended statistical programming/Assessment3_Group10")
+data <- read.table("engcov.txt", header = TRUE)
+
 t_obs <- data$julian
 y <- data$nhs
 
@@ -434,9 +433,11 @@ S <- out$S
 tf <- out$tf
 
 # Fit, plot, and bootstrap
+par(mfrow = c(2,1))
 # Fit with fixed λ = 5e-5 and plot observed deaths, fitted deaths, and infection curve
 fit_result <- fit_death(y, X, Xtilde, S, lambda = 5e-5)
-plot_death(t_obs, y, tf, out, fit_result$mu_hat, fit_result$f_hat, lambda = fit_result$lambda)
+plot_death(t_obs, y, tf, out, fit_result$mu_hat, 
+           fit_result$f_hat, lambda = fit_result$lambda)
 
 # Select λ via BIC
 log_lambda_interval <- seq(-13, -7, length = 50)
@@ -447,7 +448,8 @@ cat("Best lambda found by BIC:", lambda_hat, "\n")
 fit_best <- fit_death(y, X, Xtilde, S, lambda = lambda_hat)
 
 # Bootstrap to estimate uncertainty
-boot_result <- bootstrap(X, Xtilde, S, y, log_lambda_interval)
+boot_result <- bootstrap(X, Xtilde, S, y, log_lambda_interval,par = fit_result
+                         $gamma_hat)
 fhat_boot <- boot_result$fhat_boot
 lambda_hat <- boot_result$lambda_hat
 cat("Bootstrap finished, using lambda =", lambda_hat, "\n")
